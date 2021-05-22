@@ -1,9 +1,11 @@
 package io.bazel.rulesscala.scalac;
 
+import scala.Tuple2;
+
 import io.bazel.rulesscala.io_utils.StreamCopy;
 import io.bazel.rulesscala.jar.JarCreator;
 import io.bazel.rulesscala.worker.Worker;
-import scala.tools.nsc.reporters.ConsoleReporter;
+// import scala.tools.nsc.reporters.ConsoleReporter;
 
 import java.io.*;
 import java.nio.file.*;
@@ -14,6 +16,12 @@ import java.util.Enumeration;
 import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+
+import dotty.tools.dotc.reporting.Reporter;
+import dotty.tools.dotc.Compiler;
+import dotty.tools.dotc.Driver;
+import dotty.tools.dotc.core.Contexts;
+import dotty.tools.io.AbstractFile;
 
 import static java.io.File.pathSeparator;
 
@@ -28,6 +36,7 @@ class ScalacWorker implements Worker.Interface {
 
   @Override
   public void work(String[] args) throws Exception {
+    System.out.println(Arrays.toString(args));
     Path tmpPath = null;
     try {
       CompileOptions ops = new CompileOptions(args);
@@ -236,6 +245,10 @@ class ScalacWorker implements Worker.Interface {
 
   private static void compileScalaSources(CompileOptions ops, String[] scalaSources, Path tmpPath)
       throws IllegalAccessException, IOException {
+    System.out.println("trying to start the driver");
+    Driver driver = new dotty.tools.dotc.Driver();
+    System.out.println("trying to started the driver");
+    Contexts.Context ctx = driver.initCtx().fresh();
 
     String[] pluginArgs = buildPluginArgs(ops.plugins);
     String[] pluginParams = getPluginParamsFrom(ops);
@@ -245,18 +258,20 @@ class ScalacWorker implements Worker.Interface {
     String[] compilerArgs =
         merge(ops.scalaOpts, pluginArgs, constParams, pluginParams, scalaSources);
 
-    ReportableMainClass comp = new ReportableMainClass(ops);
+    System.out.println(Arrays.toString(compilerArgs));
 
+    Tuple2<scala.collection.immutable.List<AbstractFile>, Contexts.Context> r = driver.setup(compilerArgs, ctx).get();
+
+    Compiler compiler = driver.newCompiler(r._2);
     long start = System.currentTimeMillis();
-    try {
-      comp.process(compilerArgs);
-    } catch (Throwable ex) {
-      if (ex.toString().contains("scala.reflect.internal.Types$TypeError")) {
-        throw new RuntimeException("Build failure with type error", ex);
-      } else {
-        throw ex;
-      }
+    Reporter reporter = driver.doCompile(compiler, r._1, r._2);
+    if (reporter.hasErrors()) {
+        System.out.println("FAILED");
+        throw new RuntimeException("Compilation failed");
+    } else {
+        System.out.println("SUCCESS");
     }
+
     long stop = System.currentTimeMillis();
     if (ops.printCompileTime) {
       System.err.println("Compiler runtime: " + (stop - start) + "ms.");
@@ -265,19 +280,10 @@ class ScalacWorker implements Worker.Interface {
     try {
       Files.write(
           Paths.get(ops.statsfile), Arrays.asList("build_time=" + Long.toString(stop - start)));
+      Files.createFile(
+                       Paths.get(ops.diagnosticsFile)); //, String"");
     } catch (IOException ex) {
       throw new RuntimeException("Unable to write statsfile to " + ops.statsfile, ex);
-    }
-
-    ConsoleReporter reporter = (ConsoleReporter) comp.getReporter();
-    if (reporter instanceof ProtoReporter) {
-      ProtoReporter protoReporter = (ProtoReporter) reporter;
-      protoReporter.writeTo(Paths.get(ops.diagnosticsFile));
-    }
-
-    if (reporter.hasErrors()) {
-      reporter.flush();
-      throw new RuntimeException("Build failed");
     }
   }
 

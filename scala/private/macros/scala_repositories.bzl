@@ -77,8 +77,12 @@ def scala_repositories(
     repositories(
         for_artifact_ids = [
             "io_bazel_rules_scala_scala_library",
+            "io_bazel_rules_scala_scala_library_2",
+            "io_bazel_rules_scala_scala_interfaces",
+            "io_bazel_rules_scala_scala_tasty_core",
+            "io_bazel_rules_scala_scala_asm",
             "io_bazel_rules_scala_scala_compiler",
-            "io_bazel_rules_scala_scala_reflect",
+#            "io_bazel_rules_scala_scala_reflect",
             "io_bazel_rules_scala_scalatest",
             "io_bazel_rules_scala_scalactic",
             "io_bazel_rules_scala_scala_xml",

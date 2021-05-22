@@ -68,7 +68,11 @@ declare_deps_provider(
     deps = [
         "@io_bazel_rules_scala_scala_compiler",
         "@io_bazel_rules_scala_scala_library",
-        "@io_bazel_rules_scala_scala_reflect",
+        "@io_bazel_rules_scala_scala_library_2",
+        "@io_bazel_rules_scala_scala_interfaces",
+        "@io_bazel_rules_scala_scala_tasty_core",
+        "@io_bazel_rules_scala_scala_asm",
+#        "@io_bazel_rules_scala_scala_reflect",
     ],
 )
 
@@ -78,7 +82,8 @@ declare_deps_provider(
     visibility = ["//visibility:public"],
     deps = [
         "@io_bazel_rules_scala_scala_library",
-        "@io_bazel_rules_scala_scala_reflect",
+        "@io_bazel_rules_scala_scala_library_2",
+#        "@io_bazel_rules_scala_scala_reflect",
     ],
 )
 
@@ -88,7 +93,7 @@ declare_deps_provider(
     visibility = ["//visibility:public"],
     deps = [
         "@io_bazel_rules_scala_scala_library",
-        "@io_bazel_rules_scala_scala_reflect",
+#        "@io_bazel_rules_scala_scala_reflect",
     ],
 )
 
