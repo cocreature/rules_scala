@@ -248,7 +248,8 @@ class ScalacWorker implements Worker.Interface {
     System.out.println("trying to start the driver");
     Driver driver = new dotty.tools.dotc.Driver();
     System.out.println("trying to started the driver");
-    Contexts.Context ctx = driver.initCtx().fresh();
+    ProtoReporter reporter = new ProtoReporter();
+    Contexts.Context ctx = driver.initCtx().fresh().setReporter(reporter);
 
     String[] pluginArgs = buildPluginArgs(ops.plugins);
     String[] pluginParams = getPluginParamsFrom(ops);
@@ -264,14 +265,7 @@ class ScalacWorker implements Worker.Interface {
 
     Compiler compiler = driver.newCompiler(r._2);
     long start = System.currentTimeMillis();
-    Reporter reporter = driver.doCompile(compiler, r._1, r._2);
-    if (reporter.hasErrors()) {
-        System.out.println("FAILED");
-        throw new RuntimeException("Compilation failed");
-    } else {
-        System.out.println("SUCCESS");
-    }
-
+    driver.doCompile(compiler, r._1, r._2);
     long stop = System.currentTimeMillis();
     if (ops.printCompileTime) {
       System.err.println("Compiler runtime: " + (stop - start) + "ms.");
@@ -280,11 +274,17 @@ class ScalacWorker implements Worker.Interface {
     try {
       Files.write(
           Paths.get(ops.statsfile), Arrays.asList("build_time=" + Long.toString(stop - start)));
-      Files.createFile(
-                       Paths.get(ops.diagnosticsFile)); //, String"");
     } catch (IOException ex) {
       throw new RuntimeException("Unable to write statsfile to " + ops.statsfile, ex);
     }
+
+    reporter.writeTo(Paths.get(ops.diagnosticsFile));
+
+    if (reporter.hasErrors()) {
+        reporter.flush(ctx);
+        throw new RuntimeException("Build failed");
+    }
+
   }
 
   private static void removeTmp(Path tmp) throws IOException {

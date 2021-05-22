@@ -1,11 +1,14 @@
 package io.bazel.rulesscala.scalac;
 
 import io.bazel.rules_scala.diagnostics.Diagnostics;
-import scala.reflect.internal.util.Position;
-import scala.reflect.internal.util.RangePosition;
-import scala.tools.nsc.Settings;
-import scala.tools.nsc.reporters.ConsoleReporter;
+import dotty.tools.dotc.core.Contexts.Context;
+import dotty.tools.dotc.reporting.ConsoleReporter;
+import dotty.tools.dotc.reporting.Diagnostic;
+import dotty.tools.dotc.reporting.Message;
+import dotty.tools.dotc.util.SourcePosition;
+import scala.Console;
 
+import java.io.PrintWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,32 +17,11 @@ import java.util.*;
 
 public class ProtoReporter extends ConsoleReporter {
 
-  private final Settings settings;
   private final Map<String, List<Diagnostics.Diagnostic>> builder;
-  private final Map<Position, Severity> positions = new HashMap<>();
-  private final Map<Position, List<String>> messages = new HashMap<>();
 
-
-  private final boolean isVerbose;
-  private final boolean noWarnings;
-  private final boolean isPromptSet;
-  private final boolean isDebug;
-
-  public ProtoReporter(Settings settings) {
-    super(settings);
-    this.settings = settings;
-    this.isVerbose = (boolean) settings.verbose().value();
-    this.noWarnings = settings.nowarnings().value();
-    this.isPromptSet = settings.prompt().value();
-    this.isDebug = settings.debug().value();
+  public ProtoReporter() {
+    super(Console.in(), new PrintWriter(Console.err(), true));
     builder = new LinkedHashMap<>();
-  }
-
-  @Override
-  public void reset() {
-    super.reset();
-    positions.clear();
-    messages.clear();
   }
 
   public void writeTo(Path path) throws IOException {
@@ -50,38 +32,29 @@ public class ProtoReporter extends ConsoleReporter {
     Files.write(path, targetDiagnostics.build().toByteArray(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
   }
 
-  @Override
-  public void info0(Position pos, String msg, Severity severity, boolean force) {
-      super.info0(pos, msg, severity, force);
+    public void doReport(Diagnostic diag, Context ctx) {
+      super.doReport(diag, ctx);
+
+      Message message = diag.msg();
+
+      StringBuilder rendered = new StringBuilder();
+      rendered.append(messageAndPos(message, diag.pos(), diagnosticLevel(diag), ctx));
+      boolean shouldExplain = Diagnostic.shouldExplain(diag, ctx);
+      if (shouldExplain && !message.explanation().isEmpty()) {
+          rendered.append(explanation(message, ctx));
+      }
+
 
       Diagnostics.Diagnostic diagnostic = Diagnostics.Diagnostic
           .newBuilder()
-          .setRange(positionToRange(pos))
-          .setSeverity(convertSeverity(severity))
-          .setMessage(msg)
+          .setRange(positionToRange(diag.pos()))
+          .setSeverity(convertSeverity(diagnosticLevel(diag)))
+          .setMessage(rendered.toString())
           .build();
       // TODO: Handle generated files
-      String uri = "workspace-root://" + pos.source().file().path();
+      String uri = "workspace-root://" + diag.pos().source().file().path();
       List<Diagnostics.Diagnostic> diagnostics = builder.computeIfAbsent(uri, key -> new ArrayList());
       diagnostics.add(diagnostic);
-  }
-
-  private boolean testAndLog(Position pos, Severity severity, String msg) {
-    Position fpos = pos.focus();
-    Severity focusSeverity = positions.getOrDefault(fpos, (Severity) INFO());
-    boolean supress = false;
-    if(focusSeverity.equals(ERROR()))
-      supress = true;
-
-    if(focusSeverity.id() > severity.id())
-      supress = true;
-
-    if(severity.equals(focusSeverity) && messages.computeIfAbsent(fpos,(key) -> new ArrayList<>()).contains(msg))
-      supress = true;
-
-    positions.put(fpos, severity);
-    messages.computeIfAbsent(fpos, (key) -> new ArrayList<>()).add(msg);
-    return supress;
   }
 
   private Diagnostics.Severity convertSeverity(Object severity) {
@@ -95,21 +68,19 @@ public class ProtoReporter extends ConsoleReporter {
     }
     throw new RuntimeException("Unknown severity: " + stringified);
   }
-
-  private Diagnostics.Range positionToRange(Position pos) {
-    if (pos instanceof RangePosition) {
-      RangePosition rangePos = (RangePosition) pos;
-      int startLine = pos.source().offsetToLine(rangePos.start());
-      int endLine = pos.source().offsetToLine(rangePos.end());
+  private Diagnostics.Range positionToRange(SourcePosition pos) {
+    if (pos.exists()) {
+      int startLine = pos.startLine();
+      int endLine = pos.endLine();
       return Diagnostics.Range
           .newBuilder()
           .setStart(Diagnostics.Position.newBuilder()
               .setLine(startLine)
-              .setCharacter(rangePos.start() - pos.source().lineToOffset(startLine))
+              .setCharacter(pos.start() - pos.source().lineToOffset(startLine))
           )
           .setEnd(Diagnostics.Position.newBuilder()
               .setLine(endLine)
-              .setCharacter(rangePos.end() - pos.source().lineToOffset(endLine))
+              .setCharacter(pos.end() - pos.source().lineToOffset(endLine))
               .build())
           .build();
     }
